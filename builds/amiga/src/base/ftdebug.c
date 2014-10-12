@@ -2,9 +2,9 @@
 /*                                                                         */
 /*  ftdebug.c                                                              */
 /*                                                                         */
-/*    Debugging and logging component (body).                              */
+/*    Debugging and logging component for amiga (body).                    */
 /*                                                                         */
-/*  Copyright 1996-2001, 2002, 2004, 2005 by                               */
+/*  Copyright 1996-2002, 2004, 2005, 2013 by                               */
 /*  David Turner, Robert Wilhelm, Werner Lemberg and Detlef Würkner.       */
 /*                                                                         */
 /*  This file is part of the FreeType project, and may only be used,       */
@@ -41,12 +41,12 @@
   /*************************************************************************/
 
 
-/*
- * Based on the default ftdebug.c,
- * replaced vprintf() with KVPrintF(),
- * commented out exit(),
- * replaced getenv() with GetVar().
- */
+  /*
+   * Based on the default ftdebug.c,
+   * replaced vprintf() with KVPrintF(),
+   * commented out exit(),
+   * replaced getenv() with GetVar().
+   */
 
 #include <exec/types.h>
 #include <utility/tagitem.h>
@@ -59,9 +59,9 @@
 #include <clib/debug_protos.h>
 
 #ifndef __amigaos4__
-extern struct Library *DOSBase;
+  extern struct Library *DOSBase;
 #else
-extern struct DOSIFace *IDOS;
+  extern struct DOSIFace *IDOS;
 #endif
 
 
@@ -74,14 +74,14 @@ extern struct DOSIFace *IDOS;
 
   /* documentation is in ftdebug.h */
 
-  FT_EXPORT_DEF( void )
-  FT_Message( const char*  fmt, ... )
+  FT_BASE_DEF( void )
+  FT_Message( const char*  fmt,
+              ... )
   {
     va_list  ap;
 
 
     va_start( ap, fmt );
-/*  vprintf( fmt, ap ); */
     KVPrintF( fmt, ap );
     va_end( ap );
   }
@@ -89,18 +89,33 @@ extern struct DOSIFace *IDOS;
 
   /* documentation is in ftdebug.h */
 
-  FT_EXPORT_DEF( void )
-  FT_Panic( const char*  fmt, ... )
+  FT_BASE_DEF( void )
+  FT_Panic( const char*  fmt,
+            ... )
   {
     va_list  ap;
 
 
     va_start( ap, fmt );
-/*  vprintf( fmt, ap ); */
     KVPrintF( fmt, ap );
     va_end( ap );
 
 /*  exit( EXIT_FAILURE ); */
+  }
+
+
+  /* documentation is in ftdebug.h */
+
+  FT_BASE_DEF( int )
+  FT_Throw( FT_Error     error,
+            int          line,
+            const char*  file )
+  {
+    FT_UNUSED( error );
+    FT_UNUSED( line );
+    FT_UNUSED( file );
+
+    return 0;
   }
 
 #endif /* FT_DEBUG_LEVEL_ERROR */
@@ -127,7 +142,7 @@ extern struct DOSIFace *IDOS;
 
   /* documentation is in ftdebug.h */
 
-  FT_EXPORT_DEF( FT_Int )
+  FT_BASE_DEF( FT_Int )
   FT_Trace_Get_Count( void )
   {
     return trace_count;
@@ -136,7 +151,7 @@ extern struct DOSIFace *IDOS;
 
   /* documentation is in ftdebug.h */
 
-  FT_EXPORT_DEF( const char * )
+  FT_BASE_DEF( const char * )
   FT_Trace_Get_Name( FT_Int  idx )
   {
     int  max = FT_Trace_Get_Count();
@@ -161,7 +176,7 @@ extern struct DOSIFace *IDOS;
   /* the memory and stream components which are set to 7 and 5,            */
   /* respectively.                                                         */
   /*                                                                       */
-  /* See the file <include/freetype/internal/fttrace.h> for details of the */
+  /* See the file <include/internal/fttrace.h> for details of the          */
   /* available toggle names.                                               */
   /*                                                                       */
   /* The level must be between 0 and 7; 0 means quiet (except for serious  */
@@ -193,6 +208,9 @@ extern struct DOSIFace *IDOS;
         while ( *p && *p != ':' )
           p++;
 
+        if ( !*p )
+          break;
+
         if ( *p == ':' && p > q )
         {
           FT_Int  n, i, len = (FT_Int)( p - q );
@@ -221,7 +239,7 @@ extern struct DOSIFace *IDOS;
           p++;
           if ( *p )
           {
-            level = *p++ - '0';
+            level = *p - '0';
             if ( level < 0 || level > 7 )
               level = -1;
           }
@@ -253,14 +271,14 @@ extern struct DOSIFace *IDOS;
   }
 
 
-  FT_EXPORT_DEF( FT_Int )
+  FT_BASE_DEF( FT_Int )
   FT_Trace_Get_Count( void )
   {
     return 0;
   }
 
 
-  FT_EXPORT_DEF( const char * )
+  FT_BASE_DEF( const char * )
   FT_Trace_Get_Name( FT_Int  idx )
   {
     FT_UNUSED( idx );

@@ -4,7 +4,8 @@
 /*                                                                         */
 /*    Type 42 font parser (body).                                          */
 /*                                                                         */
-/*  Copyright 2002, 2003, 2004, 2005 by Roberto Alameda.                   */
+/*  Copyright 2002-2014 by                                                 */
+/*  Roberto Alameda.                                                       */
 /*                                                                         */
 /*  This file is part of the FreeType project, and may only be used,       */
 /*  modified, and distributed under the terms of the FreeType project      */
@@ -19,7 +20,6 @@
 #include "t42error.h"
 #include FT_INTERNAL_DEBUG_H
 #include FT_INTERNAL_STREAM_H
-#include FT_LIST_H
 #include FT_INTERNAL_POSTSCRIPT_AUX_H
 
 
@@ -49,47 +49,57 @@
                    T42_Loader  loader );
 
 
+  /* as Type42 fonts have no Private dict,         */
+  /* we set the last argument of T1_FIELD_XXX to 0 */
   static const
-  T1_FieldRec  t42_keywords[] = {
+  T1_FieldRec  t42_keywords[] =
+  {
 
 #undef  FT_STRUCTURE
 #define FT_STRUCTURE  T1_FontInfo
 #undef  T1CODE
 #define T1CODE        T1_FIELD_LOCATION_FONT_INFO
 
-    T1_FIELD_STRING( "version",            version )
-    T1_FIELD_STRING( "Notice",             notice )
-    T1_FIELD_STRING( "FullName",           full_name )
-    T1_FIELD_STRING( "FamilyName",         family_name )
-    T1_FIELD_STRING( "Weight",             weight )
-    T1_FIELD_NUM   ( "ItalicAngle",        italic_angle )
-    T1_FIELD_BOOL  ( "isFixedPitch",       is_fixed_pitch )
-    T1_FIELD_NUM   ( "UnderlinePosition",  underline_position )
-    T1_FIELD_NUM   ( "UnderlineThickness", underline_thickness )
+    T1_FIELD_STRING( "version",            version,             0 )
+    T1_FIELD_STRING( "Notice",             notice,              0 )
+    T1_FIELD_STRING( "FullName",           full_name,           0 )
+    T1_FIELD_STRING( "FamilyName",         family_name,         0 )
+    T1_FIELD_STRING( "Weight",             weight,              0 )
+    T1_FIELD_NUM   ( "ItalicAngle",        italic_angle,        0 )
+    T1_FIELD_BOOL  ( "isFixedPitch",       is_fixed_pitch,      0 )
+    T1_FIELD_NUM   ( "UnderlinePosition",  underline_position,  0 )
+    T1_FIELD_NUM   ( "UnderlineThickness", underline_thickness, 0 )
+
+#undef  FT_STRUCTURE
+#define FT_STRUCTURE  PS_FontExtraRec
+#undef  T1CODE
+#define T1CODE        T1_FIELD_LOCATION_FONT_EXTRA
+
+    T1_FIELD_NUM   ( "FSType",             fs_type,             0 )
 
 #undef  FT_STRUCTURE
 #define FT_STRUCTURE  T1_FontRec
 #undef  T1CODE
 #define T1CODE        T1_FIELD_LOCATION_FONT_DICT
 
-    T1_FIELD_KEY  ( "FontName",    font_name )
-    T1_FIELD_NUM  ( "PaintType",   paint_type )
-    T1_FIELD_NUM  ( "FontType",    font_type )
-    T1_FIELD_FIXED( "StrokeWidth", stroke_width )
+    T1_FIELD_KEY  ( "FontName",    font_name,    0 )
+    T1_FIELD_NUM  ( "PaintType",   paint_type,   0 )
+    T1_FIELD_NUM  ( "FontType",    font_type,    0 )
+    T1_FIELD_FIXED( "StrokeWidth", stroke_width, 0 )
 
 #undef  FT_STRUCTURE
 #define FT_STRUCTURE  FT_BBox
 #undef  T1CODE
 #define T1CODE        T1_FIELD_LOCATION_BBOX
 
-    T1_FIELD_BBOX("FontBBox", xMin )
+    T1_FIELD_BBOX("FontBBox", xMin, 0 )
 
-    T1_FIELD_CALLBACK( "FontMatrix",  t42_parse_font_matrix )
-    T1_FIELD_CALLBACK( "Encoding",    t42_parse_encoding )
-    T1_FIELD_CALLBACK( "CharStrings", t42_parse_charstrings )
-    T1_FIELD_CALLBACK( "sfnts",       t42_parse_sfnts )
+    T1_FIELD_CALLBACK( "FontMatrix",  t42_parse_font_matrix, 0 )
+    T1_FIELD_CALLBACK( "Encoding",    t42_parse_encoding,    0 )
+    T1_FIELD_CALLBACK( "CharStrings", t42_parse_charstrings, 0 )
+    T1_FIELD_CALLBACK( "sfnts",       t42_parse_sfnts,       0 )
 
-    { 0, T1_FIELD_LOCATION_CID_INFO, T1_FIELD_TYPE_NONE, 0, 0, 0, 0, 0 }
+    { 0, T1_FIELD_LOCATION_CID_INFO, T1_FIELD_TYPE_NONE, 0, 0, 0, 0, 0, 0 }
   };
 
 
@@ -134,7 +144,7 @@
                    FT_Memory      memory,
                    PSAux_Service  psaux )
   {
-    FT_Error  error = T42_Err_Ok;
+    FT_Error  error = FT_Err_Ok;
     FT_Long   size;
 
 
@@ -165,8 +175,8 @@
 
     if ( ft_memcmp( stream->cursor, "%!PS-TrueTypeFont", 17 ) != 0 )
     {
-      FT_TRACE2(( "not a Type42 font\n" ));
-      error = T42_Err_Unknown_File_Format;
+      FT_TRACE2(( "  not a Type42 font\n" ));
+      error = FT_THROW( Unknown_File_Format );
     }
 
     FT_FRAME_EXIT();
@@ -245,27 +255,41 @@
     FT_Face     root   = (FT_Face)&face->root;
     FT_Fixed    temp[6];
     FT_Fixed    temp_scale;
+    FT_Int      result;
 
 
-    (void)T1_ToFixedArray( parser, 6, temp, 3 );
+    result = T1_ToFixedArray( parser, 6, temp, 3 );
+
+    if ( result < 6 )
+    {
+      parser->root.error = FT_THROW( Invalid_File_Format );
+      return;
+    }
 
     temp_scale = FT_ABS( temp[3] );
+
+    if ( temp_scale == 0 )
+    {
+      FT_ERROR(( "t1_parse_font_matrix: invalid font matrix\n" ));
+      parser->root.error = FT_THROW( Invalid_File_Format );
+      return;
+    }
 
     /* Set Units per EM based on FontMatrix values.  We set the value to */
     /* 1000 / temp_scale, because temp_scale was already multiplied by   */
     /* 1000 (in t1_tofixed, from psobjs.c).                              */
 
-    root->units_per_EM = (FT_UShort)( FT_DivFix( 1000 * 0x10000L,
-                                                 temp_scale ) >> 16 );
+    root->units_per_EM = (FT_UShort)FT_DivFix( 1000, temp_scale );
 
     /* we need to scale the values by 1.0/temp_scale */
-    if ( temp_scale != 0x10000L ) {
+    if ( temp_scale != 0x10000L )
+    {
       temp[0] = FT_DivFix( temp[0], temp_scale );
       temp[1] = FT_DivFix( temp[1], temp_scale );
       temp[2] = FT_DivFix( temp[2], temp_scale );
       temp[4] = FT_DivFix( temp[4], temp_scale );
       temp[5] = FT_DivFix( temp[5], temp_scale );
-      temp[3] = 0x10000L;
+      temp[3] = temp[3] < 0 ? -0x10000L : 0x10000L;
     }
 
     matrix->xx = temp[0];
@@ -294,8 +318,8 @@
     cur = parser->root.cursor;
     if ( cur >= limit )
     {
-      FT_ERROR(( "t42_parse_encoding: out of bounds!\n" ));
-      parser->root.error = T42_Err_Invalid_File_Format;
+      FT_ERROR(( "t42_parse_encoding: out of bounds\n" ));
+      parser->root.error = FT_THROW( Invalid_File_Format );
       return;
     }
 
@@ -304,7 +328,7 @@
     if ( ft_isdigit( *cur ) || *cur == '[' )
     {
       T1_Encoding  encode          = &face->type1.encoding;
-      FT_UInt      count, n;
+      FT_Int       count, n;
       PS_Table     char_table      = &loader->encoding_table;
       FT_Memory    memory          = parser->root.memory;
       FT_Error     error;
@@ -319,7 +343,7 @@
         parser->root.cursor++;
       }
       else
-        count = (FT_UInt)T1_ToInt( parser );
+        count = (FT_Int)T1_ToInt( parser );
 
       T1_Skip_Spaces( parser );
       if ( parser->root.cursor >= limit )
@@ -391,7 +415,7 @@
           break;
         }
 
-        /* check whether we've found an entry */
+        /* check whether we have found an entry */
         if ( ft_isdigit( *cur ) || only_immediates )
         {
           FT_Int  charcode;
@@ -407,7 +431,7 @@
 
           cur = parser->root.cursor;
 
-          if ( *cur == '/' && cur + 2 < limit && n < count )
+          if ( cur + 2 < limit && *cur == '/' && n < count )
           {
             FT_PtrDist  len;
 
@@ -416,6 +440,8 @@
 
             parser->root.cursor = cur;
             T1_Skip_PS_Token( parser );
+            if ( parser->root.cursor >= limit )
+              return;
             if ( parser->root.error )
               return;
 
@@ -429,15 +455,32 @@
 
             n++;
           }
+          else if ( only_immediates )
+          {
+            /* Since the current position is not updated for           */
+            /* immediates-only mode we would get an infinite loop if   */
+            /* we don't do anything here.                              */
+            /*                                                         */
+            /* This encoding array is not valid according to the type1 */
+            /* specification (it might be an encoding for a CID type1  */
+            /* font, however), so we conclude that this font is NOT a  */
+            /* type1 font.                                             */
+            parser->root.error = FT_THROW( Unknown_File_Format );
+            return;
+          }
         }
         else
+        {
           T1_Skip_PS_Token( parser );
+          if ( parser->root.error )
+            return;
+        }
 
         T1_Skip_Spaces( parser );
       }
 
-      face->type1.encoding_type  = T1_ENCODING_TYPE_ARRAY;
-      parser->root.cursor        = cur;
+      face->type1.encoding_type = T1_ENCODING_TYPE_ARRAY;
+      parser->root.cursor       = cur;
     }
 
     /* Otherwise, we should have either `StandardEncoding', */
@@ -457,15 +500,12 @@
         face->type1.encoding_type = T1_ENCODING_TYPE_ISOLATIN1;
 
       else
-      {
-        FT_ERROR(( "t42_parse_encoding: invalid token!\n" ));
-        parser->root.error = T42_Err_Invalid_File_Format;
-      }
+        parser->root.error = FT_THROW( Ignore );
     }
   }
 
 
-  typedef enum
+  typedef enum  T42_Load_Status_
   {
     BEFORE_START,
     BEFORE_TABLE_DIR,
@@ -488,7 +528,7 @@
 
     FT_Long     n, string_size, old_string_size, real_size;
     FT_Byte*    string_buf = NULL;
-    FT_Bool     alloc      = 0;
+    FT_Bool     allocated  = 0;
 
     T42_Load_Status  status;
 
@@ -511,8 +551,8 @@
 
     if ( parser->root.cursor >= limit || *parser->root.cursor++ != '[' )
     {
-      FT_ERROR(( "t42_parse_sfnts: can't find begin of sfnts vector!\n" ));
-      error = T42_Err_Invalid_File_Format;
+      FT_ERROR(( "t42_parse_sfnts: can't find begin of sfnts vector\n" ));
+      error = FT_THROW( Invalid_File_Format );
       goto Fail;
     }
 
@@ -543,7 +583,7 @@
         if ( FT_REALLOC( string_buf, old_string_size, string_size ) )
           goto Fail;
 
-        alloc = 1;
+        allocated = 1;
 
         parser->root.cursor = cur;
         (void)T1_ToBytes( parser, string_buf, string_size, &real_size, 1 );
@@ -553,7 +593,21 @@
 
       else if ( ft_isdigit( *cur ) )
       {
+        if ( allocated )
+        {
+          FT_ERROR(( "t42_parse_sfnts: "
+                     "can't handle mixed binary and hex strings\n" ));
+          error = FT_THROW( Invalid_File_Format );
+          goto Fail;
+        }
+
         string_size = T1_ToInt( parser );
+        if ( string_size < 0 )
+        {
+          FT_ERROR(( "t42_parse_sfnts: invalid string size\n" ));
+          error = FT_THROW( Invalid_File_Format );
+          goto Fail;
+        }
 
         T1_Skip_PS_Token( parser );             /* `RD' */
         if ( parser->root.error )
@@ -561,18 +615,34 @@
 
         string_buf = parser->root.cursor + 1;   /* one space after `RD' */
 
-        parser->root.cursor += string_size + 1;
-        if ( parser->root.cursor >= limit )
+        if ( limit - parser->root.cursor < string_size )
         {
-          FT_ERROR(( "t42_parse_sfnts: too many binary data!\n" ));
-          error = T42_Err_Invalid_File_Format;
+          FT_ERROR(( "t42_parse_sfnts: too many binary data\n" ));
+          error = FT_THROW( Invalid_File_Format );
           goto Fail;
         }
+        else
+          parser->root.cursor += string_size + 1;
       }
 
-      /* A string can have a trailing zero byte for padding.  Ignore it. */
-      if ( string_buf[string_size - 1] == 0 && ( string_size % 2 == 1 ) )
+      if ( !string_buf )
+      {
+        FT_ERROR(( "t42_parse_sfnts: invalid data in sfnts array\n" ));
+        error = FT_THROW( Invalid_File_Format );
+        goto Fail;
+      }
+
+      /* A string can have a trailing zero (odd) byte for padding. */
+      /* Ignore it.                                                */
+      if ( ( string_size & 1 ) && string_buf[string_size - 1] == 0 )
         string_size--;
+
+      if ( !string_size )
+      {
+        FT_ERROR(( "t42_parse_sfnts: invalid string\n" ));
+        error = FT_THROW( Invalid_File_Format );
+        goto Fail;
+      }
 
       for ( n = 0; n < string_size; n++ )
       {
@@ -623,6 +693,7 @@
             status         = OTHER_TABLES;
             face->ttf_size = ttf_size;
 
+            /* there are no more than 256 tables, so no size check here */
             if ( FT_REALLOC( face->ttf_data, 12 + 16 * num_tables,
                              ttf_size + 1 ) )
               goto Fail;
@@ -633,8 +704,8 @@
           /* all other tables are just copied */
           if ( count >= ttf_size )
           {
-            FT_ERROR(( "t42_parse_sfnts: too many binary data!\n" ));
-            error = T42_Err_Invalid_File_Format;
+            FT_ERROR(( "t42_parse_sfnts: too many binary data\n" ));
+            error = FT_THROW( Invalid_File_Format );
             goto Fail;
           }
           face->ttf_data[count++] = string_buf[n];
@@ -645,13 +716,13 @@
     }
 
     /* if control reaches this point, the format was not valid */
-    error = T42_Err_Invalid_File_Format;
+    error = FT_THROW( Invalid_File_Format );
 
   Fail:
     parser->root.error = error;
 
   Exit:
-    if ( alloc )
+    if ( allocated )
       FT_FREE( string_buf );
   }
 
@@ -680,8 +751,8 @@
 
     if ( parser->root.cursor >= limit )
     {
-      FT_ERROR(( "t42_parse_charstrings: out of bounds!\n" ));
-      error = T42_Err_Invalid_File_Format;
+      FT_ERROR(( "t42_parse_charstrings: out of bounds\n" ));
+      error = FT_THROW( Invalid_File_Format );
       goto Fail;
     }
 
@@ -722,15 +793,15 @@
     }
     else
     {
-      FT_ERROR(( "t42_parse_charstrings: invalid token!\n" ));
-      error = T42_Err_Invalid_File_Format;
+      FT_ERROR(( "t42_parse_charstrings: invalid token\n" ));
+      error = FT_THROW( Invalid_File_Format );
       goto Fail;
     }
 
     if ( parser->root.cursor >= limit )
     {
-      FT_ERROR(( "t42_parse_charstrings: out of bounds!\n" ));
-      error = T42_Err_Invalid_File_Format;
+      FT_ERROR(( "t42_parse_charstrings: out of bounds\n" ));
+      error = FT_THROW( Invalid_File_Format );
       goto Fail;
     }
 
@@ -789,8 +860,8 @@
 
         if ( cur + 1 >= limit )
         {
-          FT_ERROR(( "t42_parse_charstrings: out of bounds!\n" ));
-          error = T42_Err_Invalid_File_Format;
+          FT_ERROR(( "t42_parse_charstrings: out of bounds\n" ));
+          error = FT_THROW( Invalid_File_Format );
           goto Fail;
         }
 
@@ -820,8 +891,8 @@
         (void)T1_ToInt( parser );
         if ( parser->root.cursor >= limit )
         {
-          FT_ERROR(( "t42_parse_charstrings: out of bounds!\n" ));
-          error = T42_Err_Invalid_File_Format;
+          FT_ERROR(( "t42_parse_charstrings: out of bounds\n" ));
+          error = FT_THROW( Invalid_File_Format );
           goto Fail;
         }
 
@@ -843,8 +914,8 @@
 
     if ( !notdef_found )
     {
-      FT_ERROR(( "t42_parse_charstrings: no /.notdef glyph!\n" ));
-      error = T42_Err_Invalid_File_Format;
+      FT_ERROR(( "t42_parse_charstrings: no /.notdef glyph\n" ));
+      error = FT_THROW( Invalid_File_Format );
       goto Fail;
     }
 
@@ -947,6 +1018,10 @@
       dummy_object = &face->type1.font_info;
       break;
 
+    case T1_FIELD_LOCATION_FONT_EXTRA:
+      dummy_object = &face->type1.font_extra;
+      break;
+
     case T1_FIELD_LOCATION_BBOX:
       dummy_object = &face->type1.font_bbox;
       break;
@@ -984,7 +1059,7 @@
 
     parser->root.cursor = base;
     parser->root.limit  = base + size;
-    parser->root.error  = T42_Err_Ok;
+    parser->root.error  = FT_Err_Ok;
 
     limit = parser->root.limit;
 
@@ -1071,7 +1146,7 @@
             if ( !name )
               continue;
 
-            if ( cur[0] == name[0]                                  && 
+            if ( cur[0] == name[0]                                  &&
                  len == (FT_PtrDist)ft_strlen( (const char *)name ) &&
                  ft_memcmp( cur, name, len ) == 0                   )
             {
